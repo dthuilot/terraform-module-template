@@ -1,0 +1,86 @@
+name: 'Terraform'
+
+on:
+  pull_request:
+    branches: [ main ]
+  push:
+    branches: [ main ]
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  terraform:
+    name: 'Terraform'
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ./
+
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v4
+
+    - name: Setup Terraform
+      uses: hashicorp/setup-terraform@v3
+      with:
+        terraform_version: "1.5.0"
+
+    - name: Terraform Format
+      id: fmt
+      run: terraform fmt -check
+      continue-on-error: true
+
+    - name: Terraform Format
+      if: steps.fmt.outcome == 'failure'
+      run: |
+        terraform fmt -recursive
+        git config --local user.email "action@github.com"
+        git config --local user.name "GitHub Action"
+        git add -A
+        git commit -m "Terraform fmt"
+        git push
+
+    - name: Terraform Init
+      id: init
+      run: terraform init
+      continue-on-error: true
+
+    - name: Terraform Validate
+      id: validate
+      run: terraform validate
+
+    - name: Terraform Plan
+      id: plan
+      if: steps.init.outcome == 'success'
+      run: terraform plan -no-color
+      continue-on-error: true
+
+    - name: Update Pull Request
+      uses: actions/github-script@v7
+      if: steps.plan.outcome == 'success'
+      env:
+        PLAN: "${{ steps.plan.outputs.stdout }}"
+      with:
+        github-token: ${{ secrets.GITHUB_TOKEN }}
+        script: |
+          const output = `#### Terraform Format and Style 🖌\`${{ steps.fmt.outcome }}\`
+          #### Terraform Initialization ⚙️\`${{ steps.init.outcome }}\`
+          #### Terraform Validation 🤖\`${{ steps.validate.outcome }}\`
+          #### Terraform Plan 📖\`${{ steps.plan.outcome }}\`
+
+          <details><summary>Show Plan</summary>
+
+          \`\`\`\n
+          ${process.env.PLAN}
+          \`\`\`
+
+          </details>`;
+
+          github.rest.issues.createComment({
+            issue_number: context.issue.number,
+            owner: context.repo.owner,
+            repo: context.repo.repo,
+            body: output
+          }) 

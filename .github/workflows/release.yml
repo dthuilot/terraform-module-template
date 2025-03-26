@@ -7,12 +7,7 @@ on:
         description: 'Branch to create release from'
         required: true
         default: 'main'
-        type: choice
-        options:
-          - main
-          - develop
-          - staging
-          - production
+        type: string
       version:
         description: 'Version number (e.g., 1.0.0)'
         required: true
@@ -23,7 +18,30 @@ on:
         type: string
 
 jobs:
+  validate-branch:
+    runs-on: ubuntu-latest
+    outputs:
+      branch_exists: ${{ steps.check-branch.outputs.exists }}
+    steps:
+      - name: Check if branch exists
+        id: check-branch
+        run: |
+          BRANCHES=$(curl -s -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
+            "https://api.github.com/repos/${{ github.repository }}/branches" | \
+            jq -r '.[].name')
+          if echo "$BRANCHES" | grep -q "^${{ github.event.inputs.branch }}$"; then
+            echo "exists=true" >> $GITHUB_OUTPUT
+          else
+            echo "exists=false" >> $GITHUB_OUTPUT
+            echo "Error: Branch '${{ github.event.inputs.branch }}' does not exist in the repository"
+            echo "Available branches:"
+            echo "$BRANCHES"
+            exit 1
+          fi
+
   create-release:
+    needs: validate-branch
+    if: needs.validate-branch.outputs.branch_exists == 'true'
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -40,9 +58,20 @@ jobs:
         with:
           tag_name: v${{ github.event.inputs.version }}
           release_name: Release v${{ github.event.inputs.version }}
-          body: ${{ github.event.inputs.release_notes }}
+          body: |
+            ${{ github.event.inputs.release_notes }}
+            
+            ---
+            Repository: ${{ github.repository }}
           draft: false
           prerelease: false
+
+      - name: Create Repository Tag
+        run: |
+          git config --local user.email "action@github.com"
+          git config --local user.name "GitHub Action"
+          git tag -a "repository-${{ github.repository }}" -m "Repository tag for ${{ github.repository }}"
+          git push origin "repository-${{ github.repository }}"
 
       - name: Output Release URL
         run: echo "Release created at ${{ steps.create_release.outputs.html_url }}" 

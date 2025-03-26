@@ -5,6 +5,10 @@ terraform {
       source  = "hashicorp/aws"
       version = ">= 4.0.0"
     }
+    github = {
+      source  = "integrations/github"
+      version = ">= 5.0.0"
+    }
   }
 }
 
@@ -16,6 +20,6 @@ resource "aws_s3_bucket" "example" {
     {
       Name = var.bucket_name
     },
-    var.tags
+    local.tags
   )
 } 
